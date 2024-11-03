@@ -1,7 +1,3 @@
-"""
-@author: Maziar Raissi
-"""
-
 import numpy as np
 import tensorflow as tf
 
@@ -21,41 +17,10 @@ class FBSNN(ABC):  # Forward-Backward Stochastic Neural Network
         self.layers = layers  # (D+1) --> 1
         
         # initialize NN
-        self.weights, self.biases = self.initialize_NN(layers)
-        
-        # optimizers
-        # self.optimizer = tf.keras.optimizers.Adam()
+        self.model = FBSNNModel(layers)
 
-    
-    def initialize_NN(self, layers):
-        weights = []
-        biases = []
-        num_layers = len(layers) 
-        for l in range(0, num_layers - 1):
-            W = self.xavier_init(size=[layers[l], layers[l + 1]])
-            b = tf.Variable(tf.zeros([1, layers[l + 1]], dtype=tf.float32), dtype=tf.float32)
-            weights.append(W)
-            biases.append(b)
-        return weights, biases
-        
-    def xavier_init(self, size):
-        in_dim = size[0]
-        out_dim = size[1]        
-        xavier_stddev = np.sqrt(2 / (in_dim + out_dim))
-        return tf.Variable(tf.random.truncated_normal([in_dim, out_dim], stddev=xavier_stddev), dtype=tf.float32)
-    
-    def neural_net(self, X, weights, biases):
-        num_layers = len(weights) + 1
-        
-        H = X
-        for l in range(0, num_layers - 2):
-            W = weights[l]
-            b = biases[l]
-            H = tf.sin(tf.add(tf.matmul(H, W), b))
-        W = weights[-1]
-        b = biases[-1]
-        Y = tf.add(tf.matmul(H, W), b)
-        return Y
+        # optimizers
+        self.optimizer = tf.keras.optimizers.Adam()
     
     def net_u(self, t, X):  # M x 1, M x D
         t = tf.cast(t, tf.float32)
@@ -63,9 +28,8 @@ class FBSNN(ABC):  # Forward-Backward Stochastic Neural Network
         
         with tf.GradientTape() as tape:
             tape.watch(X)
-            u = self.neural_net(tf.concat([t, X], 1), self.weights, self.biases)  # M x 1
+            u = self.model.call(tf.concat([t, X], 1))
         Du = tape.gradient(u, X)  # M x D
-        
         return u, Du
 
     def Dg_tf(self, X):  # M x D
@@ -97,7 +61,7 @@ class FBSNN(ABC):  # Forward-Backward Stochastic Neural Network
         for n in range(0, self.N):
             t1 = t[:, n + 1, :]
             W1 = W[:, n + 1, :]
-            # W1 = tf.cast(W1, tf.float32)  # Ensure W1 is cast to the same type
+
             X1 = X0 + self.mu_tf(t0, X0, Y0, Z0) * (t1 - t0) + tf.squeeze(tf.matmul(self.sigma_tf(t0, X0, Y0), tf.expand_dims(W1 - W0, -1)), axis=[-1])
             Y1_tilde = Y0 + self.phi_tf(t0, X0, Y0, Z0) * (t1 - t0) + tf.reduce_sum(Z0 * tf.squeeze(tf.matmul(self.sigma_tf(t0, X0, Y0), tf.expand_dims(W1 - W0, -1))), axis=1, keepdims=True)
             Y1, Z1 = self.net_u(t1, X1)
@@ -143,8 +107,7 @@ class FBSNN(ABC):  # Forward-Backward Stochastic Neural Network
     
 
     def train(self, N_Iter, learning_rate):
-        # self.optimizer.learning_rate = learning_rate
-        optimizer = tf.keras.optimizers.Adam(learning_rate)
+        self.optimizer.learning_rate = learning_rate
 
         start_time = time.time()
         for it in range(N_Iter):
@@ -157,8 +120,8 @@ class FBSNN(ABC):  # Forward-Backward Stochastic Neural Network
             with tf.GradientTape() as tape:
                 loss_value, _, _, Y0_value = self.loss_function(t_batch, W_batch, self.Xi)
 
-            gradients = tape.gradient(loss_value, self.weights + self.biases)
-            optimizer.apply_gradients(zip(gradients, self.weights + self.biases))
+            gradients = tape.gradient(loss_value, self.model.trainable_variables)
+            self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
             # Print
             if it % 10 == 0:
@@ -200,3 +163,30 @@ class FBSNN(ABC):  # Forward-Backward Stochastic Neural Network
         D = self.D
         return tf.linalg_diag(tf.ones([M,D]))  # M x D x D
     ###########################################################################
+
+class FBSNNModel(tf.keras.Model):
+    def __init__(self,layers):
+        super(FBSNNModel, self).__init__()
+        self.dense_layers = []
+
+        for l in range(len(layers) - 2):
+            self.dense_layers.append(tf.keras.layers.Dense(
+                units=layers[l + 1],
+                activation=tf.math.sin,
+                kernel_initializer=tf.keras.initializers.GlorotNormal(),
+                bias_initializer=tf.zeros_initializer()
+            ))
+        
+            self.dense_layers.append(tf.keras.layers.Dense(
+                units=layers[-1],
+                activation=None,
+                kernel_initializer=tf.keras.initializers.GlorotNormal(),
+                bias_initializer=tf.zeros_initializer()
+            ))
+
+    def call(self, X):
+        Y = X
+        for layer in self.dense_layers:
+            Y = layer(Y)
+        return Y
+    
