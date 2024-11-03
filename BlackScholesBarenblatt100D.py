@@ -1,7 +1,3 @@
-"""
-@author: Maziar Raissi
-"""
-
 import numpy as np
 import tensorflow as tf
 from FBSNN_2 import FBSNN
@@ -94,7 +90,7 @@ if __name__ == "__main__":
     plt.title('100-dimensional Black-Scholes-Barenblatt')
     plt.legend()
     
-    savefig('./figures/BSB_Oct23_1', crop = False)
+    savefig('./figures/BSB_Oct29_1', crop = False)
     
     
     errors = np.sqrt((Y_test-Y_pred)**2/Y_test**2)
@@ -109,5 +105,5 @@ if __name__ == "__main__":
     plt.title('100-dimensional Black-Scholes-Barenblatt')
     plt.legend()
     
-    savefig('./figures/BSB_Oct23_1_errors', crop = False)
+    savefig('./figures/BSB_Oct29_1_errors', crop = False)
     
